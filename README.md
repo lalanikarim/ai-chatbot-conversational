@@ -1,6 +1,6 @@
 ---
 title: Ai Chatbot with Conversational Memory
-emoji: 📊
+emoji: 🔥
 colorFrom: indigo
 colorTo: gray
 sdk: streamlit
