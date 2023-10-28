@@ -1,12 +1,13 @@
 import streamlit as st
+import os
+from urllib.request import urlretrieve
+from operator import itemgetter
 from langchain.llms import LlamaCpp
-from langchain.schema import SystemMessage
-from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, MessagesPlaceholder, PromptTemplate
-from langchain.chains import LLMChain
+from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.memory import ConversationBufferMemory
 # from langchain.callbacks.manager import CallbackManager
 from langchain.callbacks.base import BaseCallbackHandler
-import json
+from langchain.schema.runnable import RunnablePassthrough, RunnableLambda
 
 
 # StreamHandler to intercept streaming output from the LLM.
@@ -24,56 +25,118 @@ class StreamHandler(BaseCallbackHandler):
 
 @st.cache_resource
 def create_chain(system_prompt):
+    # --- Disabled ---
     # A stream handler to direct streaming output on the chat screen.
     # This will need to be handled somewhat differently.
     # But it demonstrates what potential it carries.
     # stream_handler = StreamHandler(st.empty())
 
+    # --- Disabled ---
     # Callback manager is a way to intercept streaming output from the
     # LLM and take some action on it. Here we are giving it our custom
     # stream handler to make it appear as if the LLM is typing the
     # responses in real time.
     # callback_manager = CallbackManager([stream_handler])
 
+    # url and model name to download
+    (url, model_name) = (
+            "https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.1-GGUF/resolve/main/mistral-7b-instruct-v0.1.Q4_0.gguf",
+            "mistral-7b-instruct-v0.1.Q4_0.gguf")
+
+    # create models folder if missing
+    if not os.path.exists("models"):
+        os.mkdir("models")
+
+    # set model_path before providing to LlamaCpp
+    model_path = "models/" + model_name
+
+    # download model to model_path if missing
+    if not os.path.exists(model_path):
+        urlretrieve(url, model_path)
+
+    # initialize LlamaCpp llm model
     llm = LlamaCpp(
-            model_path="models/mistral-7b-instruct-v0.1.Q4_0.gguf",
+            model_path=model_path,
             temperature=0,
             max_tokens=512,
             top_p=1,
             # callback_manager=callback_manager,
             verbose=False,
             streaming=True,
+            stop=["Human:"]
             )
 
-    # Template you will use to structure your user input into before converting
-    # into a prompt. Here, my template first injects the personality I wish to give
-    # to the LLM before in the form of system_prompt pushing the actual prompt from the user.
-    # Then we'll inject the chat history followed by the user prompt and a placeholder token
-    # for the LLM to complete.
-    template = """
-    {}
-
-    {}
-
-    Human: {}
-    AI: 
-    """.format(system_prompt, "{chat_history}","{human_input}")
-
+    # system_prompt will include instructions to the llm. This might also be
+    # related to the persona that we desire the llm to assume.
+    # We will then add a placeholder for the chat history and name of the input
+    # variable which we will use to pass the history into the template.
+    # Next, we specify the placeholder for the user prompt as {human_input}.
+    # Lastly, we include an empty "ai" prompt to indicate the end of user input
+    # and start of ai response.
     # We create a prompt from the template so we can use it with langchain
-    # prompt = ChatPromptTemplate.from_messages([
-    #     SystemMessage(content=system_prompt),
-    #     MessagesPlaceholder(variable_name="chat_history"),
-    #     HumanMessagePromptTemplate.from_template("{human_input}")
-    #     ])
-    prompt = PromptTemplate(input_variables=["chat_history","human_input"], template=template)
+    prompt = ChatPromptTemplate.from_messages([
+            ("system", system_prompt),
+            MessagesPlaceholder(variable_name="chat_history"),
+            ("human", "{human_input}"),
+            ("ai", ""),
+        ])
 
-    # Conversation buffer memory will keep track of the conversation in the memory
-    memory = ConversationBufferMemory(memory_key="chat_history")
+    # Conversation buffer memory will keep track of the conversation in the
+    # memory. It will use the "chat_history" as the name of the key.
+    memory = ConversationBufferMemory(memory_key="chat_history",
+                                      return_messages=True)
 
-    # We create an llm chain with our llm with prompt and memory
-    llm_chain = LLMChain(prompt=prompt, llm=llm, memory=memory, verbose=True)
+    # utility method that takes in the previous user prompt and generated ai
+    # response and stores it in the conversational memory.
+    def save_memory(inputs_outputs):
+        inputs = {"human": inputs_outputs["human"]}
+        outputs = {"ai": inputs_outputs["ai"]}
+        memory.save_context(inputs, outputs)
 
-    return llm_chain
+    # utility function to print chat history to the console after every
+    # interaction.
+    def debug_memory():
+        print("\n", "#"*10, "\n")
+        print(memory.load_memory_variables({}))
+        print("\n", "#"*10, "\n")
+
+    # utility function to extract the ai response and return it. There must be
+    # a better way to handle it but I can't find any examples or documentation
+    # on how to achieve the same. So I created this function instead.
+    def extract_response(chain_response):
+        # debug_memory()
+        return chain_response["ai"]
+
+    # We create the internal llm chain first that takes our input and chat
+    # history and wraps it in a dictionary before passing it as input to our
+    # prompt. The prompt is then passed to our llm to generate an ai response.
+    llm_chain = {
+            "human_input": RunnablePassthrough(),
+            "chat_history": (
+                RunnableLambda(memory.load_memory_variables) |
+                itemgetter("chat_history")
+            )
+        } | prompt | llm
+
+    # Since we need to manually inject our inputs and ai response into the
+    # memory we need to keep track of the initial prompt that we send through
+    # the chain so we can then save it to the memory with the generated ai
+    # response. In order to do that, we create a parallel dummy "chain", which
+    # will serve as passthrough chain for our prompt while the second chain
+    # will be used to generate an ai response based on our prompt and the chat
+    # history using the previous "llm_chain". We then combine both chains in a
+    # dictionary and past it to two more chains in parallel. First chain will
+    # call save our prompt and ai response to the chat history and second chain
+    # will extract the ai response and return that as the output of the chain.
+    chain_with_memory = RunnablePassthrough() | {
+                "human": RunnablePassthrough(),
+                "ai": llm_chain
+            } | {
+                "save_memory": RunnableLambda(save_memory),
+                "ai": itemgetter("ai")
+            } | RunnableLambda(extract_response)
+
+    return chain_with_memory
 
 
 # Set the webpage title
@@ -128,7 +191,7 @@ if user_prompt := st.chat_input("Your message here", key="user_input"):
     # It is worth noting that the Stream Handler is already receiving the
     # streaming response as the llm is generating. We get our response
     # here once the llm has finished generating the complete response.
-    response = llm_chain.predict(human_input=user_prompt)
+    response = llm_chain.invoke(user_prompt)
 
     # Add the response to the session state
     st.session_state.messages.append(

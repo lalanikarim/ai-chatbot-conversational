@@ -1,3 +1,15 @@
+---
+title: Ai Chatbot with Conversational Memory
+emoji: 📊
+colorFrom: indigo
+colorTo: gray
+sdk: streamlit
+sdk_version: 1.28.0
+app_file: main.py
+pinned: false
+license: mit
+---
+
 # Streamlit + Langchain + LLama.cpp w/ Mistral + Conversational Memory
 
 Run your own AI Chatbot locally without a GPU.
@@ -13,9 +25,7 @@ This example remembers the chat history allowing you to ask follow up questions.
 1. Install llama-cpp-python
 2. Install langchain
 3. Install streamlit
-4. Download Mistral from HuggingFace from TheBloke's repo: mistral-7b-instruct-v0.1.Q4_0.gguf
-5. Place model file in the `models` subfolder
-6. Run streamlit
+4. Run streamlit
 
 # Step by Step instructions
 
@@ -34,16 +44,12 @@ source venv/bin/activate
 ```bash
 pip install -r requirements.txt
 ```
-5. Create a subdirectory to place the models in:
-```bash
-mkdir -p models
-```
-6. Download the `Mistral7b` quantized model from `huggingface` from the following link:
-[mistral-7b-instruct-v0.1.Q4_0.gguf](https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.1-GGUF/resolve/main/mistral-7b-instruct-v0.1.Q4_0.gguf)
-7. Start `streamlit`:
+5. Start `streamlit`:
 ```bash
 streamlit run main.py
 ```
+6. The `models` directory will be created and the app will download the `Mistral7b` quantized model from `huggingface` from the following link:
+[mistral-7b-instruct-v0.1.Q4_0.gguf](https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.1-GGUF/resolve/main/mistral-7b-instruct-v0.1.Q4_0.gguf)
 
 # Screenshot
 
