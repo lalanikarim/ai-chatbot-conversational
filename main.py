@@ -1,6 +1,4 @@
 import streamlit as st
-import os
-from urllib.request import urlretrieve
 from operator import itemgetter
 from langchain.llms import LlamaCpp
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -8,6 +6,7 @@ from langchain.memory import ConversationBufferMemory
 # from langchain.callbacks.manager import CallbackManager
 from langchain.callbacks.base import BaseCallbackHandler
 from langchain.schema.runnable import RunnablePassthrough, RunnableLambda
+from huggingface_hub import hf_hub_download
 
 
 # StreamHandler to intercept streaming output from the LLM.
@@ -38,21 +37,12 @@ def create_chain(system_prompt):
     # responses in real time.
     # callback_manager = CallbackManager([stream_handler])
 
-    # url and model name to download
-    (url, model_name) = (
-            "https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.1-GGUF/resolve/main/mistral-7b-instruct-v0.1.Q4_0.gguf",
-            "mistral-7b-instruct-v0.1.Q4_0.gguf")
+    (repo_id, model_file_name) = ("TheBloke/Mistral-7B-Instruct-v0.1-GGUF",
+                                  "mistral-7b-instruct-v0.1.Q5_0.gguf")
 
-    # create models folder if missing
-    if not os.path.exists("models"):
-        os.mkdir("models")
-
-    # set model_path before providing to LlamaCpp
-    model_path = "models/" + model_name
-
-    # download model to model_path if missing
-    if not os.path.exists(model_path):
-        urlretrieve(url, model_path)
+    model_path = hf_hub_download(repo_id=repo_id,
+                                 filename=model_file_name,
+                                 repo_type="model")
 
     # initialize LlamaCpp llm model
     llm = LlamaCpp(
